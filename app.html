@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HemoScanAI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary:#1a56db; --bg:#f8fafc; --card:#ffffff; --text:#1e293b; --muted:#64748b; --accent: #e11d48; }
+        body { font-family:'Inter',sans-serif; background:var(--bg); margin:0; padding-bottom: 70px; color: var(--text); }
+        header { background:white; padding:20px; text-align:center; border-bottom:3px solid var(--primary); sticky: top; }
+        .logo { font-size:1.6rem; font-weight:800; color:var(--primary); }
+        .page { display:none; padding:20px; animation: fadeIn 0.3s; }
+        .page.active { display:block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .card { background:white; border-radius:15px; padding:20px; margin-bottom:15px; box-shadow:0 3px 10px rgba(0,0,0,0.05); }
+        input, select { width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; margin-bottom:15px; box-sizing: border-box; }
+        .checkbox-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .checkbox-item { display: flex; align-items: center; font-size: 0.9rem; }
+        .checkbox-item input { width: auto; margin-right: 8px; margin-bottom: 0; }
+        .btn { background:var(--primary); color:white; border:none; padding:14px; border-radius:10px; width:100%; cursor:pointer; font-weight: 600; }
+        .btn-secondary { background: #64748b; margin-top: 10px; }
+        #chat-window { height:300px; overflow-y:auto; background:#f1f5f9; padding:10px; border-radius:10px; margin-bottom:10px; border: 1px solid #e2e8f0; }
+        .msg { padding:10px; border-radius:10px; margin:5px 0; max-width: 80%; }
+        .msg.user { background:var(--primary); color:white; align-self: flex-end; margin-left: auto; }
+        .msg.ai { background:white; border: 1px solid #e2e8f0; }
+        .result-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 10px; margin-top: 15px; }
+        nav { position:fixed; bottom:0; width:100%; background:white; display:flex; justify-content:space-around; padding:15px 0; border-top:1px solid #ddd; }
+        nav div { color: var(--muted); cursor: pointer; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+        nav div.active-nav { color: var(--primary); }
+    </style>
+</head>
+<body>
+
+<header><div class="logo">HemoScanAI</div></header>
+
+<div id="home" class="page active">
+    <div class="card">
+        <h3>Welcome</h3>
+        <p id="welcomeText">Please set up your profile to begin.</p>
+        <button class="btn" onclick="showPage('scan')">Start Blood Analysis</button>
+    </div>
+</div>
+
+<div id="profile" class="page">
+    <div class="card">
+        <h3>User Profile</h3>
+        <p style="font-size: 0.8rem; color: var(--muted);">Registering helps us track your health history.</p>
+        <input type="text" id="profileName" placeholder="Full Name">
+        <input type="email" id="profileEmail" placeholder="Email Address">
+        <button class="btn" onclick="saveProfile()">Create Profile & Save</button>
+    </div>
+</div>
+
+<div id="scan" class="page">
+    <div class="card">
+        <h3>Health Data</h3>
+        <input type="number" id="age" placeholder="Age">
+        <select id="gender">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+        </select>
+        <input type="number" step="0.1" id="hb" placeholder="Hemoglobin (g/dL)">
+
+        <h4>Symptoms</h4>
+        <div class="checkbox-group">
+            <div class="checkbox-item"><input type="checkbox" id="fatigue"> Fatigue</div>
+            <div class="checkbox-item"><input type="checkbox" id="dizziness"> Dizziness</div>
+            <div class="checkbox-item"><input type="checkbox" id="paleSkin"> Pale Skin</div>
+            <div class="checkbox-item"><input type="checkbox" id="shortBreath"> Short Breath</div>
+        </div>
+
+        <button class="btn" onclick="runPrediction()">Run AI Analysis</button>
+
+        <div id="resultArea" class="result-box" style="display:none;">
+            <h4 style="margin-top:0; color: #166534;">Analysis Result</h4>
+            <p><strong>Risk Level:</strong> <span id="resRisk"></span></p>
+            <p><strong>Anemia Type:</strong> <span id="resType"></span></p>
+        </div>
+    </div>
+</div>
+
+<div id="chat" class="page">
+    <div class="card">
+        <h3>Health Assistant</h3>
+        <div id="chat-window"></div>
+        <div style="display:flex; gap:5px;">
+            <input type="text" id="chatInput" placeholder="Ask about your results..." style="margin-bottom:0;">
+            <button class="btn" onclick="sendToBot()" style="width: 80px;">Send</button>
+        </div>
+    </div>
+</div>
+
+<nav>
+    <div onclick="showPage('home')">Home</div>
+    <div onclick="showPage('profile')">Profile</div>
+    <div onclick="showPage('scan')">Scan</div>
+    <div onclick="showPage('chat')">Chat</div>
+</nav>
+
+<script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    function showPage(pageId){
+        document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+        document.getElementById(pageId).classList.add('active');
+    }
+
+    async function saveProfile(){
+        const name = document.getElementById("profileName").value;
+        const email = document.getElementById("profileEmail").value;
+
+        if(!name || !email){
+            alert("Please fill in all fields");
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/users`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, email })
+            });
+            
+            if(res.ok) {
+                localStorage.setItem("username", name);
+                localStorage.setItem("userEmail", email);
+                document.getElementById("welcomeText").innerText = "Welcome back, " + name;
+                alert("Profile synced with database!");
+                showPage('home');
+            }
+        } catch(e) {
+            alert("Backend connection failed. Is the server running?");
+        }
+    }
+
+    async function runPrediction(){
+        const data = {
+            username: localStorage.getItem("username") || "Guest",
+            age: parseInt(document.getElementById('age').value || 0),
+            gender: document.getElementById('gender').value,
+            hemoglobin: parseFloat(document.getElementById('hb').value || 0),
+            fatigue: document.getElementById('fatigue').checked,
+            dizziness: document.getElementById('dizziness').checked,
+            pale_skin: document.getElementById('paleSkin').checked,
+            short_breath: document.getElementById('shortBreath').checked
+        };
+
+        const res = await fetch(`${API_BASE}/predict`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json();
+        document.getElementById('resRisk').innerText = result.risk_level;
+        document.getElementById('resType').innerText = result.anemia_type;
+        document.getElementById('resultArea').style.display = 'block';
+    }
+
+    async function sendToBot(){
+        const input = document.getElementById('chatInput');
+        const text = input.value;
+        if(!text) return;
+
+        const win = document.getElementById('chat-window');
+        win.innerHTML += `<div class="msg user">${text}</div>`;
+        input.value = "";
+
+        const res = await fetch(`${API_BASE}/chat`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ prompt: text })
+        });
+
+        const data = await res.json();
+        win.innerHTML += `<div class="msg ai">${data.response}</div>`;
+        win.scrollTop = win.scrollHeight;
+    }
+
+    window.onload = () => {
+        const name = localStorage.getItem("username");
+        if(name) document.getElementById("welcomeText").innerText = "Welcome, " + name;
+    };
+</script>
+</body>
+</html>
